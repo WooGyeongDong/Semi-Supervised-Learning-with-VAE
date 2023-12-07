@@ -1,24 +1,19 @@
 #%%
 import torch
 import torch.optim 
-from torch.utils.data import DataLoader, SubsetRandomSampler
 import numpy as np
 from tqdm import tqdm
 # import copy
 import wandb
 import importlib
 from data import load_semi_MNIST
-# import model_class as mod
-# importlib.reload(mod)
+import model_class as mod
+importlib.reload(mod)
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-def reparameterization(mu, logvar):
-    std = torch.exp(logvar/2)
-    eps = torch.randn(mu.size())
-    return mu.addcmul(std, eps)
 
 #%%
 config = {'input_dim' : 28*28,
@@ -26,7 +21,7 @@ config = {'input_dim' : 28*28,
           'latent_dim' : 2,
           'batch_size' : 100,
           'labelled_size' : 3000,
-          'epochs' : 300,
+          'epochs' : 2,
           'lr' : 0.0003,
           'best_loss' : 10**9,
           'patience_limit' : 3}
@@ -38,86 +33,6 @@ print('Current cuda device is', device)
 
 #%%
 labelled, unlabelled, validation = load_semi_MNIST(config['batch_size'], config['labelled_size'])
-
-#%%
-class Classifier2(nn.Module):
-    def __init__(self, x_dim, h_dim):
-        super().__init__()
-        self.fc = nn.Sequential(
-            nn.Linear(x_dim, h_dim),
-            nn.ReLU(),
-            nn.Linear(h_dim, h_dim),
-            nn.ReLU(),
-            nn.Linear(h_dim, 10)
-        )
-
-    def forward(self, x):
-        pi = self.fc(x)
-        y = torch.softmax(pi, dim = 1)
-        return y
-
-#%%
-class Encoder2(nn.Module):
-    def __init__(self, x_dim, h_dim, z_dim):
-        super().__init__()
-
-        # 1st hidden layer
-        self.fc1 = nn.Sequential(
-            nn.Linear(x_dim+10, h_dim),
-            nn.ReLU(),
-            nn.Linear(h_dim, h_dim),
-            nn.ReLU()
-        )
-
-        # output layer
-        self.mu = nn.Linear(h_dim, z_dim)
-        self.logvar = nn.Linear(h_dim, z_dim)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        mu = self.mu(x)
-        logvar = F.softplus(self.logvar(x))
-
-        z = reparameterization(mu, logvar)
-        return z, mu, logvar
-    
-#%%
-class Decoder2(nn.Module):
-    def __init__(self, x_dim, h_dim, z_dim):
-        super().__init__()
-
-        # 1st hidden layer
-        self.fc1 = nn.Sequential(
-            nn.Linear(z_dim + 10, h_dim),
-            nn.ReLU(),
-            nn.Linear(h_dim, h_dim),
-            nn.ReLU()
-        )
-
-        # output layer
-        self.fc2 = nn.Linear(h_dim, x_dim)
-
-    def forward(self, z):
-        z = self.fc1(z)
-        x_reconst = torch.sigmoid(self.fc2(z))
-        return x_reconst
-
-#%%
-class VAE2(nn.Module):
-    def __init__(self, x_dim, h_dim, z_dim):
-        super().__init__()
-        self.encoder = Encoder2(x_dim, h_dim, z_dim)
-        self.decoder = Decoder2(x_dim, h_dim, z_dim)
-        self.classifier = Classifier2(x_dim, h_dim)
-        
-    def forward(self, x, label):
-        z, mu, logvar = self.encoder(torch.cat([x, label], dim = -1))
-        x_reconst = self.decoder(torch.cat([z, label], dim = -1))
-        return x_reconst, mu, logvar
-    
-    def classify(self, x):
-        y = self.classifier(x)
-        return y
 
 
 def kld(mu, log_var):
@@ -268,7 +183,7 @@ class DeepGenerativeModel(VariationalAutoencoder):
         logits = self.classifier(x)
         return logits
 
-
+#%%
 def kld(mu, logvar):
     kl = 0.5 * (mu**2 + logvar.exp() - logvar - 1)
 
@@ -290,8 +205,8 @@ def loss_func2(x, x_reconst, mu, logvar, label):
     return L
 
 #%%
-model = VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
-model = DeepGenerativeModel([784, 10, 2, [600, 600]])
+model = mod.VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
+# model = DeepGenerativeModel([784, 10, 2, [600, 600]])
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 # parameter 초기값 N(0, 0.01)에서 random sampling
@@ -429,7 +344,7 @@ def generate_grid(dim, grid_size, grid_range):
 grid = generate_grid(2, 10, (-5,5))
 
 latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                              torch.FloatTensor([0,0,0,0,0,0,0,1,0,0])])).reshape(-1,28,28) 
+                              torch.FloatTensor([0,0,1,0,0,0,0,0,0,0])])).reshape(-1,28,28) 
                               for i in grid]
 latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
 plt.imshow(latent_grid_img.permute(1,2,0))
