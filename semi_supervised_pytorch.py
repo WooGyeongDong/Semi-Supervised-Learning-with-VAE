@@ -2,7 +2,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 import numpy as np
 
 import tqdm
@@ -20,13 +19,10 @@ labelled, unlabelled, validation = load_semi_MNIST(batch_size=100, labelled_size
 #%%
 
 
-def log_standard_categorical(p):
-
-    # Uniform prior over y
-    prior = F.softmax(torch.ones_like(p), dim=1)
+def log_prior(p):
+    prior = F.softmax(torch.ones_like(p), dim=-1)
     prior.requires_grad = False
-
-    cross_entropy = -torch.sum(p * torch.log(prior + 1e-8), dim=1)
+    cross_entropy = -torch.sum(p * torch.log(prior), dim = -1)
 
     return cross_entropy
 
@@ -35,7 +31,7 @@ def kld(mu, logvar):
 
     return torch.sum(kl, dim=-1)
 
-def one_hot(digit):
+def onehot(digit):
     vector = torch.zeros(10)
     vector[digit] = 1
     return vector
@@ -73,62 +69,65 @@ alpha = 0.1 * 3000
 model = mod.VAE2(784, 500, 2)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
-
+for param in model.parameters():
+    torch.nn.init.normal_(param, 0, 0.001)
 epochs = 2
-best = 0.0
 
-def loss_function(x, reconstruction, mu, log_var, y):
-    likeli = torch.sum(F.binary_cross_entropy(reconstruction, x, reduction='none'), dim = -1)
-    prior = log_standard_categorical(y)
-    kl = kld(mu, log_var)
-
-    return likeli + prior + kl
+def loss_function(x, x_reconst, mu, logvar, label):
+    kl_div = kld(mu, logvar)
+    reconst_loss = torch.sum(F.binary_cross_entropy(x_reconst, x, reduction='none'), dim = -1)
+    prior = log_prior(label)
+    L = kl_div + reconst_loss + prior
+    
+    return L
 
 #%%
 for epoch in tqdm.tqdm(range(epochs)):
     model.train()
-    for (x, y), (u, _) in zip(labelled, unlabelled):
-        # Wrap in variables
-        # x, y, u = Variable(x), Variable(y), Variable(u)
-        y = torch.stack([one_hot(i) for i in y])
-        # forward
+    for (x, target), (u, _) in zip(labelled, unlabelled):
+
+        label = torch.stack([onehot(i) for i in target])
         x = x.view(-1, 784)
         u = u.view(-1, 784)
-        # L = -elbo(x, y)
-        # U = -elbo(u)
         
-        reconstruction, mu, log_var = model(x, y)
+        x_reconst, mu, log_var = model(x, label)
       
-        elbo = loss_function(x, reconstruction, mu, log_var, y)
-        elbo = torch.mean(elbo)
+        elbo = torch.mean(loss_function(x, x_reconst, mu, log_var, label))
 
+        logits = model.classify(u)
         extend_y = torch.cat([torch.nn.functional.one_hot(torch.zeros(len(u)).long() + i, num_classes=10) for i in range(10)], dim=0).float()
         extend_u = u.repeat(10, 1)
-        logits = model.classify(u)
+        
         reconstruction, mu, log_var = model(extend_u, extend_y)
         
         L = loss_function(extend_u, reconstruction, mu, log_var, extend_y)
-
         L = L.view_as(logits.t()).t()
 
-        # Calculate entropy H(q(y|x)) and sum over all labels
-        H = torch.sum(torch.mul(logits, torch.log(logits + 1e-8)), dim=-1)
+        # Calculate entropy H(q(y|x)) and sum over all label
         L = torch.sum(torch.mul(logits, L), dim=-1)
+        H = torch.sum(torch.mul(logits, torch.log(logits + 1e-8)), dim=-1)
 
         # Equivalent to -U(x)
-        U = L + H
-        U = torch.mean(U)
+        # U = L + H
+        # U = torch.mean(U)
 
-        # Add auxiliary classification loss q(y|x)
-        logit = model.classify(x)
-        classication_loss = -torch.sum(y * torch.log(logit + 1e-8), dim=1).mean()
-        
+        # # Add auxiliary classification loss q(y|x)
+        # logit = model.classify(x)
+        # classication_loss = -torch.sum(label * torch.log(logit + 1e-8), dim=1).mean()
+        J = elbo + torch.mean(L + H)
 
-        J_alpha = elbo + alpha * classication_loss + U
+        #Classification loss
+        prob = model.classify(x)
+        # classification_loss = F.cross_entropy(prob, label, reduction='mean')*0.1*config['labelled_size']
+        classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=1).mean()*300
 
+        J_alpha = J + classification_loss
+
+        # J_alpha = elbo + alpha * classication_loss + U
+        optimizer.zero_grad()
         J_alpha.backward()
         optimizer.step()
-        optimizer.zero_grad()
+        
     # if epoch % 10 == 0:
         print(J_alpha)
            
@@ -137,7 +136,7 @@ for epoch in tqdm.tqdm(range(epochs)):
 #%%
 grid = generate_grid(2, 10, (-5,5))
 latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                              torch.FloatTensor(one_hot(4))])).reshape(-1,28,28) 
+                              torch.FloatTensor(onehot(4))])).reshape(-1,28,28) 
                               for i in grid]
 latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
 plt.imshow(latent_grid_img.permute(1,2,0))

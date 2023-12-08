@@ -51,7 +51,7 @@ def log_prior(p):
 
     return cross_entropy    
 
-def loss_func2(x, x_reconst, mu, logvar, label):
+def loss_function(x, x_reconst, mu, logvar, label):
     kl_div = kld(mu, logvar)
     reconst_loss = torch.sum(F.binary_cross_entropy(x_reconst, x, reduction='none'), dim = -1)
     prior = log_prior(label)
@@ -65,8 +65,8 @@ model = mod.VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim 
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 # parameter 초기값 N(0, 0.01)에서 random sampling
-for param in model.parameters():
-    torch.nn.init.normal_(param, 0, 0.001)
+# for param in model.parameters():
+#     torch.nn.init.normal_(param, 0, 0.001)
 #%% 
 
 def onehot(digit):
@@ -93,16 +93,16 @@ for epoch in tqdm(range(config['epochs'])):
         
         # labelled data loss
         x_reconst, mu, logvar = model(x, label)
-        L = torch.mean(loss_func2(x, x_reconst, mu, logvar, label))
+        L = torch.mean(loss_function(x, x_reconst, mu, logvar, label))
         
         # unlabelled data loss
-        u_prob = model.classifier(u)
+        u_prob = model.classify(u)
         temp_label = torch.cat([torch.nn.functional.one_hot(torch.zeros(len(u)).long() + i, num_classes=10) for i in range(10)], dim=0).float()
         extend_u = u.repeat(10, 1)
-        
+
         u_reconst, u_mu, u_logvar = model(extend_u, temp_label)
 
-        u_elbo = loss_func2(extend_u, u_reconst, u_mu, u_logvar, temp_label)
+        u_elbo = loss_function(extend_u, u_reconst, u_mu, u_logvar, temp_label)
         u_elbo = u_elbo.view_as(u_prob.t()).t()
         
         U = torch.sum(torch.mul(u_prob, u_elbo), dim = -1)
@@ -111,7 +111,7 @@ for epoch in tqdm(range(config['epochs'])):
         J = L + torch.mean(U + H)
 
         #Classification loss
-        prob = model.classifier(x)
+        prob = model.classify(x)
         # classification_loss = F.cross_entropy(prob, label, reduction='mean')*0.1*config['labelled_size']
         classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=1).mean()*0.1*config['labelled_size']
 
@@ -123,6 +123,9 @@ for epoch in tqdm(range(config['epochs'])):
         print(loss)
     print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/config['batch_size']))    
     # wandb.log({'train_loss':train_loss/len(train_dataloader.dataset)})
+
+
+
 
 #%%
 
@@ -202,7 +205,7 @@ def generate_grid(dim, grid_size, grid_range):
 grid = generate_grid(2, 10, (-5,5))
 
 latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                              torch.FloatTensor([0,0,0,0,0,0,1,0,0,0])])).reshape(-1,28,28) 
+                              torch.FloatTensor(onehot(4))])).reshape(-1,28,28) 
                               for i in grid]
 latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
 plt.imshow(latent_grid_img.permute(1,2,0))
