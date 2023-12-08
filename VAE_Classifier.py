@@ -16,6 +16,9 @@ import torch.nn.functional as F
 
 
 #%%
+torch.manual_seed(1337)
+np.random.seed(1337)
+
 config = {'input_dim' : 28*28,
           'hidden_dim' : 500,
           'latent_dim' : 2,
@@ -34,154 +37,6 @@ print('Current cuda device is', device)
 #%%
 labelled, unlabelled, validation = load_semi_MNIST(config['batch_size'], config['labelled_size'])
 
-
-def kld(mu, log_var):
-
-    kl = 0.5 * (mu**2 + log_var.exp() - log_var - 1)
-
-    return torch.sum(kl, dim=-1)
-
-
-#%%
-class Classifier(nn.Module):
-    def __init__(self, dims):
-        """
-        Single hidden layer classifier
-        with softmax output.
-        """
-        super(Classifier, self).__init__()
-        [x_dim, h_dim, y_dim] = dims
-        self.dense = nn.Linear(x_dim, h_dim)
-        self.logits = nn.Linear(h_dim, y_dim)
-
-    def forward(self, x):
-        x = F.relu(self.dense(x))
-        x = F.softmax(self.logits(x), dim=-1)
-        return x
-    
-     
-class GaussianSample(nn.Module):
-    """
-    Layer that represents a sample from a
-    Gaussian distribution.
-    """
-    def __init__(self, in_features, out_features):
-        super(GaussianSample, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-
-        self.mu = nn.Linear(in_features, out_features)
-        self.log_var = nn.Linear(in_features, out_features)
-    
-    def forward(self, x):
-        mu = self.mu(x)
-        log_var = F.softplus(self.log_var(x))
-
-        # return self.reparametrize(mu, log_var), mu, log_var
-        return reparameterization(mu, log_var), mu, log_var
-    
-#%%
-
-    
-class Encoder(nn.Module):
-    def __init__(self, dims, sample_layer=GaussianSample):
- 
-        super(Encoder, self).__init__()
-
-        [x_dim, h_dim, z_dim] = dims
-        neurons = [x_dim, *h_dim]
-        linear_layers = [nn.Linear(neurons[i-1], neurons[i]) for i in range(1, len(neurons))]
-
-        self.hidden = nn.ModuleList(linear_layers)
-        self.sample = sample_layer(h_dim[-1], z_dim)
-
-    def forward(self, x):
-        for layer in self.hidden:
-            x = F.relu(layer(x))
-        return self.sample(x)
-
-
-class Decoder(nn.Module):
-    def __init__(self, dims):
-
-        super(Decoder, self).__init__()
-
-        [z_dim, h_dim, x_dim] = dims
-
-        neurons = [z_dim, *h_dim]
-        linear_layers = [nn.Linear(neurons[i-1], neurons[i]) for i in range(1, len(neurons))]
-        self.hidden = nn.ModuleList(linear_layers)
-
-        self.reconstruction = nn.Linear(h_dim[-1], x_dim)
-
-        self.output_activation = nn.Sigmoid()
-
-    def forward(self, x):
-        for layer in self.hidden:
-            x = F.relu(layer(x))
-        return self.output_activation(self.reconstruction(x))
-
-
-class VariationalAutoencoder(nn.Module):
-    def __init__(self, dims):
-
-        super(VariationalAutoencoder, self).__init__()
-
-        [x_dim, z_dim, h_dim] = dims
-        self.z_dim = z_dim
-
-        self.encoder = Encoder([x_dim, h_dim, z_dim])
-        self.decoder = Decoder([z_dim, list(reversed(h_dim)), x_dim])
-        self.kl_divergence = 0
-
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                torch.nn.init.xavier_normal(m.weight.data)
-                if m.bias is not None:
-                    m.bias.data.zero_()
-
-
-    def forward(self, x, y=None):
-
-        z, z_mu, z_log_var = self.encoder(x)
-
-        self.kl_divergence = kld(z_mu, z_log_var)
-
-        x_mu = self.decoder(z)
-
-        return x_mu
-
-
-class DeepGenerativeModel(VariationalAutoencoder):
-    def __init__(self, dims):
-
-        [x_dim, self.y_dim, z_dim, h_dim] = dims
-        super(DeepGenerativeModel, self).__init__([x_dim, z_dim, h_dim])
-
-        self.encoder = Encoder([x_dim + self.y_dim, h_dim, z_dim])
-        self.decoder = Decoder([z_dim + self.y_dim, list(reversed(h_dim)), x_dim])
-        self.classifier = Classifier([x_dim, h_dim[0], self.y_dim])
-
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                torch.nn.init.xavier_normal(m.weight.data)
-                if m.bias is not None:
-                    m.bias.data.zero_()
-
-    def forward(self, x, y):
-        # Add label and data and generate latent variable
-        z, z_mu, z_log_var = self.encoder(torch.cat([x, y], dim=-1))
-
-        # self.kl_divergence = self._kld(z, (z_mu, z_log_var))
-
-        # Reconstruct data point from latent data and label
-        x_mu = self.decoder(torch.cat([z, y], dim=1))
-
-        return x_mu, z_mu, z_log_var
-
-    def classify(self, x):
-        logits = self.classifier(x)
-        return logits
 
 #%%
 def kld(mu, logvar):
@@ -206,7 +61,7 @@ def loss_func2(x, x_reconst, mu, logvar, label):
 
 #%%
 model = mod.VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
-# model = DeepGenerativeModel([784, 10, 2, [600, 600]])
+# model = mod.DeepGenerativeModel([784, 10, 2, [600, 600]])
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 # parameter 초기값 N(0, 0.01)에서 random sampling
@@ -230,6 +85,7 @@ for epoch in tqdm(range(config['epochs'])):
     model.train()
     train_loss = 0
     for (x, target), (u, _) in zip(labelled, unlabelled):
+        
         # data processing
         label = torch.stack([onehot(i) for i in target]).to(device)
         x = x.view(-1, img_size).to(device)
@@ -242,8 +98,10 @@ for epoch in tqdm(range(config['epochs'])):
         # unlabelled data loss
         u_prob = model.classifier(u)
         temp_label = torch.cat([torch.nn.functional.one_hot(torch.zeros(len(u)).long() + i, num_classes=10) for i in range(10)], dim=0).float()
-        extend_u = torch.cat([u for _ in range(10)], dim=0)
+        extend_u = u.repeat(10, 1)
+        
         u_reconst, u_mu, u_logvar = model(extend_u, temp_label)
+
         u_elbo = loss_func2(extend_u, u_reconst, u_mu, u_logvar, temp_label)
         u_elbo = u_elbo.view_as(u_prob.t()).t()
         
@@ -344,12 +202,10 @@ def generate_grid(dim, grid_size, grid_range):
 grid = generate_grid(2, 10, (-5,5))
 
 latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                              torch.FloatTensor([0,0,1,0,0,0,0,0,0,0])])).reshape(-1,28,28) 
+                              torch.FloatTensor([0,0,0,0,0,0,1,0,0,0])])).reshape(-1,28,28) 
                               for i in grid]
 latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
 plt.imshow(latent_grid_img.permute(1,2,0))
 plt.show()
 # wandb.log({"latent generate": wandb.Image(latent_grid_img)})
-
-
 #%%
