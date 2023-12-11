@@ -1,42 +1,36 @@
 #%%
 import torch
 import torch.optim 
+import torch.nn.functional as F
 import numpy as np
 from tqdm import tqdm
-# import copy
+import copy
 import wandb
 import importlib
 from data import load_semi_MNIST
 import model_class as mod
 importlib.reload(mod)
-
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
 #%%
-torch.manual_seed(1337)
-np.random.seed(1337)
-
 config = {'input_dim' : 28*28,
           'hidden_dim' : 500,
           'latent_dim' : 2,
-          'batch_size' : 100,
+          'batch_size' : 500,
           'labelled_size' : 3000,
-          'epochs' : 2,
+          'epochs' : 30,
           'lr' : 0.0003,
           'best_loss' : 10**9,
           'patience_limit' : 3}
+
+# set seed
+torch.manual_seed(23)
+
 #%%
-# wandb.init(project="VAE", config=config)
+# wandb.init(project="VAE_Class", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
-
 #%%
-labelled, unlabelled, validation = load_semi_MNIST(config['batch_size'], config['labelled_size'])
-
+labelled, unlabelled, label_validation, unlabel_validation = load_semi_MNIST(config['batch_size'], config['labelled_size'], seed_value=23)
 
 #%%
 def kld(mu, logvar):
@@ -51,7 +45,7 @@ def log_prior(p):
 
     return cross_entropy    
 
-def loss_function(x, x_reconst, mu, logvar, label):
+def elbo(x, x_reconst, mu, logvar, label):
     kl_div = kld(mu, logvar)
     reconst_loss = torch.sum(F.binary_cross_entropy(x_reconst, x, reduction='none'), dim = -1)
     prior = log_prior(label)
@@ -59,21 +53,50 @@ def loss_function(x, x_reconst, mu, logvar, label):
     
     return L
 
-#%%
-model = mod.VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
-# model = mod.DeepGenerativeModel([784, 10, 2, [600, 600]])
-# optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
-optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
-# parameter 초기값 N(0, 0.01)에서 random sampling
-# for param in model.parameters():
-#     torch.nn.init.normal_(param, 0, 0.001)
-#%% 
-
 def onehot(digit):
     vector = torch.zeros(10)
     vector[digit] = 1
     return vector
 
+def loss_function(x, label, u, model):
+    x_reconst, mu, logvar = model(x, label)
+    L = torch.mean(elbo(x, x_reconst, mu, logvar, label))
+    
+    # unlabelled data loss
+    u_prob = model.classify(u)
+    temp_label = torch.cat([F.one_hot(torch.zeros(len(u)).long() + i, num_classes=10) for i in range(10)], dim=0).float().to(device)
+    extend_u = u.repeat(10, 1)
+
+    u_reconst, u_mu, u_logvar = model(extend_u, temp_label)
+
+    u_elbo = elbo(extend_u, u_reconst, u_mu, u_logvar, temp_label)
+    u_elbo = u_elbo.view_as(u_prob.t()).t()
+    
+    U = torch.sum(torch.mul(u_prob, u_elbo), dim = -1)
+    H = torch.sum(torch.mul(u_prob, torch.log(u_prob + 1e-8)), dim = -1)
+    
+    J = L + torch.mean(U + H)
+
+    #Classification loss
+    prob = model.classify(x)
+    classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=1).mean()*0.1*config['labelled_size']
+
+    loss = J + classification_loss
+    return loss
+
+#%%
+M1 = torch.jit.load('model_scripted.pt')
+M1 = M1.to(device)
+M1.eval()
+stack = True
+if stack : model = mod.VAE2(x_dim=50, h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
+else : model = mod.VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
+# optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
+
+optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
+# parameter 초기값 N(0, 0.01)에서 random sampling
+# for param in model.parameters():
+#     torch.nn.init.normal_(param, 0, 0.001)
 
 #%%
 img_size = config['input_dim']  
@@ -90,84 +113,37 @@ for epoch in tqdm(range(config['epochs'])):
         label = torch.stack([onehot(i) for i in target]).to(device)
         x = x.view(-1, img_size).to(device)
         u = u.view(-1, img_size).to(device)
-        
-        # labelled data loss
-        x_reconst, mu, logvar = model(x, label)
-        L = torch.mean(loss_function(x, x_reconst, mu, logvar, label))
-        
-        # unlabelled data loss
-        u_prob = model.classify(u)
-        temp_label = torch.cat([torch.nn.functional.one_hot(torch.zeros(len(u)).long() + i, num_classes=10) for i in range(10)], dim=0).float()
-        extend_u = u.repeat(10, 1)
+        if stack:
+            x, _, _ = M1.encoder(x)
+            u, _, _ = M1.encoder(u)
+            x = torch.sigmoid(x)
+            u = torch.sigmoid(u)
 
-        u_reconst, u_mu, u_logvar = model(extend_u, temp_label)
-
-        u_elbo = loss_function(extend_u, u_reconst, u_mu, u_logvar, temp_label)
-        u_elbo = u_elbo.view_as(u_prob.t()).t()
-        
-        U = torch.sum(torch.mul(u_prob, u_elbo), dim = -1)
-        H = torch.sum(torch.mul(u_prob, torch.log(u_prob + 1e-8)), dim = -1)
-        
-        J = L + torch.mean(U + H)
-
-        #Classification loss
-        prob = model.classify(x)
-        # classification_loss = F.cross_entropy(prob, label, reduction='mean')*0.1*config['labelled_size']
-        classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=1).mean()*0.1*config['labelled_size']
-
-        loss = J + classification_loss
+        loss = loss_function(x, label, u, model)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
-        print(loss)
-    print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/config['batch_size']))    
+    print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/len(labelled)))    
     # wandb.log({'train_loss':train_loss/len(train_dataloader.dataset)})
 
-
-
-
-#%%
-
-x.shape
-U.shape
-uy.shape
-label.shape
-temp_label.shape
-
-import torch
-temp_label = torch.zeros([94,10])
-p = temp_label
-# 예제 행렬 생성
-original_matrix = torch.tensor([[1, 2, 3],
-                                [4, 5, 6]])
-
-# 행렬을 복제하고 아래로 연결하기
-replicated_matrix = original_matrix.repeat(3, 1)  # 3번 행 방향으로, 1번 열 방향으로 복제
-result_matrix = torch.cat([original_matrix, replicated_matrix], dim=0)
-
-print(result_matrix)
-
-
-u = torch.zeros(5)  # 임의로 길이가 5인 텐서를 생성 (실제로는 데이터에 따라서 길이가 달라질 것입니다)
-
-out = torch.stack([torch.nn.functional.one_hot(torch.zeros(len(u)).long() + i, num_classes=10) for i in range(10)], dim=0)
-
-print(out)
-
-'''
     model.eval()
     val_loss = 0
     with torch.no_grad():
-        for x_val, _ in test_dataloader:
-            x_val = x_val.view(-1, img_size)
-            x_val = x_val.to(device)
-            x_val_reconst, mu, logvar = model(x_val)
-
-            loss = mod.loss_func(x_val, x_val_reconst, mu, logvar).item()
-            val_loss += loss/len(test_dataloader.dataset)
+        for (x, target), (u, _) in zip(label_validation, unlabel_validation):
+            label = torch.stack([onehot(i) for i in target]).to(device)
+            x = x.view(-1, img_size).to(device)
+            u = u.view(-1, img_size).to(device)
+            if stack:
+                x, _, _ = M1.encoder(x)
+                u, _, _ = M1.encoder(u)
+                x = torch.sigmoid(x)
+                u = torch.sigmoid(u)
+    
+            loss = loss_function(x, label, u, model)
+            val_loss += loss/len(label_validation)
         val.append(val_loss)
-        # wandb.log({'train_loss':train_loss/len(train_dataloader.dataset), 'valid_loss': val_loss})
+        # wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
         print(epoch, val_loss)
         if abs(val_loss - best_loss) < 1e-3: # loss가 개선되지 않은 경우
             patience_check += 1
@@ -180,7 +156,7 @@ print(out)
             best_loss = val_loss
             best_model = copy.deepcopy(model)
             patience_check = 0
-'''
+
 #%%
 import torchvision.utils
 import matplotlib.pyplot as plt
@@ -205,10 +181,20 @@ def generate_grid(dim, grid_size, grid_range):
 grid = generate_grid(2, 10, (-5,5))
 
 latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                              torch.FloatTensor(onehot(4))])).reshape(-1,28,28) 
+                              torch.FloatTensor(onehot(7))]).to(device)).reshape(-1,28,28) 
                               for i in grid]
 latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
 plt.imshow(latent_grid_img.permute(1,2,0))
 plt.show()
 # wandb.log({"latent generate": wandb.Image(latent_grid_img)})
 #%%
+generate_image = [M1(x[i].view(-1, img_size).to(device))[0].reshape(-1,28,28) for i in range(9)]
+gen_grid_img = torchvision.utils.make_grid(generate_image, nrow=3)
+plt.imshow(gen_grid_img.permute(1,2,0))
+
+latent_image = [M1.decoder(model.decoder(torch.cat([torch.FloatTensor(i), 
+                              torch.FloatTensor(onehot(4))]).to(device))).reshape(-1,28,28) 
+                              for i in grid]
+latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
+plt.imshow(latent_grid_img.permute(1,2,0))
+plt.show()

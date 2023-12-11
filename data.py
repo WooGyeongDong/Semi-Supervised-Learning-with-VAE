@@ -26,12 +26,14 @@ def load_frey_face() :
     
     return file 
 
-def load_semi_MNIST(batch_size, labelled_size):
+def load_semi_MNIST(batch_size, labelled_size, seed_value = 23):
+    random.seed(seed_value)
     train_data, test_data = load_MNIST()
     
     indices = list(range(len(train_data)))
     random.shuffle(indices)
-    valid_indices = indices[:10000]
+    label_valid_indices = indices[:int(labelled_size/5)]
+    unlabel_valid_indices = indices[int(labelled_size/5):10000]
     labelled_indices = indices[10000:10000+labelled_size]
     unlabelled_indices = indices[10000+labelled_size:]
 
@@ -41,7 +43,9 @@ def load_semi_MNIST(batch_size, labelled_size):
                                             sampler=SubsetRandomSampler(labelled_indices))
     unlabelled = DataLoader(train_data, batch_size=batch_size-labelled_batch_size, pin_memory=True,
                                                 sampler=SubsetRandomSampler(unlabelled_indices))
-    validation = DataLoader(train_data, batch_size=batch_size, pin_memory=True,
-                                                sampler=SubsetRandomSampler(valid_indices))
-    return labelled, unlabelled, validation
+    label_validation = DataLoader(train_data, batch_size=batch_size, pin_memory=True,
+                                                sampler=SubsetRandomSampler(label_valid_indices))
+    unlabel_validation = DataLoader(train_data, batch_size=labelled_batch_size, pin_memory=True,
+                                                sampler=SubsetRandomSampler(unlabel_valid_indices))
+    return labelled, unlabelled, label_validation, unlabel_validation
 

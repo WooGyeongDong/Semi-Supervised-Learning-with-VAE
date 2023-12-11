@@ -2,14 +2,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# def reparameterization(mu, logvar):
-#     std = torch.exp(logvar/2)
-#     eps = torch.ones_like(std, dtype=torch.float32)
-#     return mu + eps * std
 def reparameterization(mu, logvar):
     std = torch.exp(logvar/2)
-    eps = torch.randn(mu.size())
-    return mu.addcmul(std, eps)
+    eps = torch.randn_like(std, dtype=torch.float32)
+    return mu + eps * std
 #%%
 class Encoder(nn.Module):
     def __init__(self, x_dim, h_dim, z_dim):
@@ -34,7 +30,6 @@ class Encoder(nn.Module):
         z = reparameterization(mu, logvar)
         return z, mu, logvar
     
-#%%
 class Decoder(nn.Module):
     def __init__(self, x_dim, h_dim, z_dim):
         super().__init__()
@@ -53,7 +48,6 @@ class Decoder(nn.Module):
         x_reconst = torch.sigmoid(self.fc2(z))
         return x_reconst
 
-#%%
 class VAE(nn.Module):
     def __init__(self, x_dim, h_dim, z_dim):
         super().__init__()
@@ -72,14 +66,15 @@ def loss_func(x, x_reconst, mu, logvar):
     
     return loss
 
+#%%
 class Classifier2(nn.Module):
     def __init__(self, x_dim, h_dim):
         super().__init__()
         self.fc = nn.Sequential(
             nn.Linear(x_dim, h_dim),
-            nn.ReLU(),
+            nn.Softplus(),
             nn.Linear(h_dim, h_dim),
-            nn.ReLU(),
+            nn.Softplus(),
             nn.Linear(h_dim, 10)
         )
 
@@ -96,9 +91,9 @@ class Encoder2(nn.Module):
         # 1st hidden layer
         self.fc1 = nn.Sequential(
             nn.Linear(x_dim+10, h_dim),
-            nn.ReLU(),
+            nn.Softplus(),
             nn.Linear(h_dim, h_dim),
-            nn.ReLU()
+            nn.Softplus()
         )
 
         # output layer
@@ -121,9 +116,9 @@ class Decoder2(nn.Module):
         # 1st hidden layer
         self.fc1 = nn.Sequential(
             nn.Linear(z_dim + 10, h_dim),
-            nn.ReLU(),
+            nn.Softplus(),
             nn.Linear(h_dim, h_dim),
-            nn.ReLU()
+            nn.Softplus()
         )
 
         # output layer
