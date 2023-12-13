@@ -3,7 +3,7 @@ import torch
 import torch.optim 
 import torch.nn.functional as F
 import numpy as np
-from tqdm import tqdm
+from ipypb import ipb
 import copy
 import wandb
 import importlib
@@ -26,12 +26,14 @@ torch.manual_seed(23)
 
 #%%
 wb_log = False
-if wb_log: wandb.init(project="VAE_Class", config=config)
+if wb_log: wandb.init(project="VAE_M1M2", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
 #%%
-labelled, unlabelled, label_validation, unlabel_validation, test_loader = load_semi_MNIST(config['batch_size'], config['labelled_size'], seed_value=23)
+labelled, unlabelled, label_validation, unlabel_validation, test_loader = load_semi_MNIST(config['batch_size'], 
+                                                                                          config['labelled_size'], 
+                                                                                          seed_value=23)
 
 #%%
 def kld(mu, logvar):
@@ -94,8 +96,8 @@ M1 = M1.to(device)
 M1.eval()
 model = mod.VAE12(x_dim=50, h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
-
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
+
 # parameter 초기값 N(0, 0.01)에서 random sampling
 # for param in model.parameters():
 #     torch.nn.init.normal_(param, 0, 0.001)
@@ -106,7 +108,7 @@ best_loss = config['best_loss']
 patience_limit = config['patience_limit']
 patience_check = 0 # 현재 몇 epoch 연속으로 loss 개선이 안되는지를 기록
 val = []
-for epoch in tqdm(range(config['epochs'])):
+for epoch in ipb(range(config['epochs'])):
     model.train()
     train_loss = 0
     for (x, target), (u, _) in zip(labelled, unlabelled):
@@ -178,10 +180,6 @@ grid = generate_grid(2, 10, (-5,5))
 
 # %%
 with torch.no_grad(): 
-    #%%
-    # generate_image = [M1(x[i].view(-1, img_size).to(device))[0].reshape(-1,28,28) for i in range(9)]
-    # gen_grid_img = torchvision.utils.make_grid(generate_image, nrow=3)
-    # plt.imshow(gen_grid_img.permute(1,2,0))
 
     latent_image = [M1.decoder(model.decoder(torch.cat([torch.FloatTensor(i), 
                                 torch.FloatTensor(onehot(7))]).to(device))[0]).reshape(-1,28,28) 
@@ -200,6 +198,5 @@ with torch.no_grad():
         x, _, _ = M1.encoder(x)
         pred_idx = torch.argmax(model.classify(x), dim=-1)
         accuracy += torch.mean((pred_idx.data == label).float())
-    next(iter(test_loader))[0][1]
     print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
 # %%
