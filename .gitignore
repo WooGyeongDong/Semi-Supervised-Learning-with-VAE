@@ -165,3 +165,5 @@ Semi-supervised learning with deep generative models/data/MNIST/raw/train-labels
 Semi-supervised learning with deep generative models/data/MNIST/raw/train-labels-idx1-ubyte.gz
 Semi-supervised learning with deep generative models/model/best_M1_state.pt
 Semi-supervised learning with deep generative models/model/best_M1.pt
+output/
+wandb/
