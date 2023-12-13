@@ -30,7 +30,7 @@ is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
 #%%
-labelled, unlabelled, label_validation, unlabel_validation, test_data = load_semi_MNIST(config['batch_size'], config['labelled_size'], seed_value=23)
+labelled, unlabelled, label_validation, unlabel_validation, test_loader = load_semi_MNIST(config['batch_size'], config['labelled_size'], seed_value=23)
 
 #%%
 def kld(mu, logvar):
@@ -175,23 +175,30 @@ def generate_grid(dim, grid_size, grid_range):
 
 grid = generate_grid(2, 10, (-5,5))
 
-latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                              torch.FloatTensor(onehot(7))]).to(device)).reshape(-1,28,28) 
-                              for i in grid]
-latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
-plt.imshow(latent_grid_img.permute(1,2,0))
-plt.show()
-# wandb.log({"latent generate": wandb.Image(latent_grid_img)})
-#%%
-# generate_image = [M1(x[i].view(-1, img_size).to(device))[0].reshape(-1,28,28) for i in range(9)]
-# gen_grid_img = torchvision.utils.make_grid(generate_image, nrow=3)
-# plt.imshow(gen_grid_img.permute(1,2,0))
 
-latent_image = [M1.decoder(model.decoder(torch.cat([torch.FloatTensor(i), 
-                              torch.FloatTensor(onehot(7))]).to(device))[0]).reshape(-1,28,28) 
-                              for i in grid]
-latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
-plt.imshow(latent_grid_img.permute(1,2,0))
-plt.show()
+# %%
+with torch.no_grad(): 
+    #%%
+    # generate_image = [M1(x[i].view(-1, img_size).to(device))[0].reshape(-1,28,28) for i in range(9)]
+    # gen_grid_img = torchvision.utils.make_grid(generate_image, nrow=3)
+    # plt.imshow(gen_grid_img.permute(1,2,0))
 
+    latent_image = [M1.decoder(model.decoder(torch.cat([torch.FloatTensor(i), 
+                                torch.FloatTensor(onehot(7))]).to(device))[0]).reshape(-1,28,28) 
+                                for i in grid]
+    latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
+    plt.imshow(latent_grid_img.permute(1,2,0))
+    plt.show()
+    # wandb.log({"latent generate": wandb.Image(latent_grid_img)})
+    
+    model = model.to('cpu')
+    M1 = M1.to('cpu')
+    accuracy = 0
+    for x, label in test_loader:
+        x = x.view(-1, img_size)
+        x, _, _ = M1.encoder(x)
+        pred_idx = torch.argmax(model.classify(x), dim=-1)
+        accuracy += torch.mean((pred_idx.data == label).float())
+    next(iter(test_loader))[0][1]
+    print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
 # %%

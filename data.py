@@ -50,5 +50,5 @@ def load_semi_MNIST(batch_size, labelled_size, seed_value = 23):
 
     test_loader = DataLoader(test_data, batch_size=100, shuffle=False)
 
-    return labelled, unlabelled, label_validation, unlabel_validation, test_loader, test_data
+    return labelled, unlabelled, label_validation, unlabel_validation, test_loader
 

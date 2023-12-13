@@ -13,10 +13,10 @@ importlib.reload(mod)
 #%%
 config = {'input_dim' : 28*28,
           'hidden_dim' : 500,
-          'latent_dim' : 2,
+          'latent_dim' : 10,
           'batch_size' : 500,
           'labelled_size' : 3000,
-          'epochs' : 30,
+          'epochs' : 50,
           'lr' : 0.0003,
           'best_loss' : 10**9,
           'patience_limit' : 3}
@@ -30,7 +30,9 @@ is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
 #%%
-labelled, unlabelled, label_validation, unlabel_validation, test_loader, test_data = load_semi_MNIST(config['batch_size'], config['labelled_size'], seed_value=23)
+labelled, unlabelled, label_validation, unlabel_validation, test_loader = load_semi_MNIST(config['batch_size'],
+                                                                                          config['labelled_size'],
+                                                                                            seed_value=23)
 
 #%%
 def kld(mu, logvar):
@@ -132,7 +134,7 @@ for epoch in tqdm(range(config['epochs'])):
         val.append(val_loss)
         # wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
         print(epoch, val_loss)
-        if abs(val_loss - best_loss) < 1e-3: # loss가 개선되지 않은 경우
+        if abs(val_loss - best_loss) < 1: # loss가 개선되지 않은 경우
             patience_check += 1
 
             if patience_check >= patience_limit: # early stopping 조건 만족 시 조기 종료
@@ -167,35 +169,36 @@ def generate_grid(dim, grid_size, grid_range):
 
 grid = generate_grid(2, 10, (-5,5))
 
-for j in range(10):
-    latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                                torch.FloatTensor(onehot(j))]).to(device)).reshape(-1,28,28) 
-                                for i in grid]
-    latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
-    plt.imshow(latent_grid_img.permute(1,2,0))
-    plt.show()
-# wandb.log({"latent generate": wandb.Image(latent_grid_img)})
-#%%
-accuracy = 0
-for x, label in test_loader:
-    x = x.view(-1, img_size).to(device)
-    pred_idx = torch.argmax(model.classify(x), dim=-1)
-    accuracy += torch.mean((pred_idx.data == label).float())
+with torch.no_grad():
+    # for j in range(10):
+    #     latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
+    #                                 torch.FloatTensor(onehot(j))]).to(device)).reshape(-1,28,28) 
+    #                                 for i in grid]
+    #     latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
+    #     # plt.imshow(latent_grid_img.permute(1,2,0))
+    #     # plt.show()
+    # wandb.log({"latent generate": wandb.Image(latent_grid_img)})
 
-print(f'{accuracy.item()/len(test_loader)*100}%')
-# %%
-## No grad add
-image = [test_data[i][0] for i in range(10)]
-grid_img = torchvision.utils.make_grid(image, nrow=3)
-plt.imshow(grid_img.permute(1,2,0))
+    model = model.to('cpu')
+    accuracy = 0
+    for x, label in test_loader:
+        x = x.view(-1, img_size)
+        pred_idx = torch.argmax(model.classify(x), dim=-1)
+        accuracy += torch.mean((pred_idx.data == label).float())
+    next(iter(test_loader))[0][1]
+    print(f'{accuracy.item()/len(test_loader)*100:.2f}%')   
 
-latent = [model.encoder(torch.cat([image[i].view(-1, img_size).squeeze(), torch.FloatTensor(onehot(test_data[i][1]))]).to(device))[0] for i in range(10)]
-analogies_image = []
-for i, z in enumerate(latent):
-    gen_image = [model.decoder(torch.cat([z, torch.FloatTensor(onehot(j))]).to(device)).reshape(-1,28,28) 
-                                for j in range(10)]
-    gen_image.insert(0, image[i])
-    analogies_image.extend(gen_image)
-gen_grid_img = torchvision.utils.make_grid(analogies_image, nrow=11)
-plt.imshow(gen_grid_img.permute(1,2,0))
+    test_data = next(iter(test_loader))
+    image = test_data[0][:10]
+    test_label = test_data[1][:10]
+    latent = [model.encoder(torch.cat([image[i].view(-1, img_size).squeeze(), torch.FloatTensor(onehot(test_label[i]))]))[0] for i in range(10)]
+    analogies_image = []
+    for i, z in enumerate(latent):
+        gen_image = [model.decoder(torch.cat([z, torch.FloatTensor(onehot(j))])).reshape(-1,28,28) 
+                                    for j in range(10)]
+        gen_image.insert(0, image[i])
+        analogies_image.extend(gen_image)
+    gen_grid_img = torchvision.utils.make_grid(analogies_image, nrow=11)
+    plt.imshow(gen_grid_img.permute(1,2,0))
+    # wandb.log({"analogies generate": wandb.Image(gen_grid_img)})
 # %%

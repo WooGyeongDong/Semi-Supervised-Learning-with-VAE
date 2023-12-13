@@ -77,7 +77,7 @@ def loss_func(x, x_reconst, mu, logvar):
 ###   M2
 
 #%%
-class Classifier2(nn.Module):
+class Classifier(nn.Module):
     def __init__(self, x_dim, h_dim):
         super().__init__()
         self.fc = nn.Sequential(
@@ -145,7 +145,7 @@ class VAE2(nn.Module):
         super().__init__()
         self.encoder = Encoder2(x_dim, h_dim, z_dim)
         self.decoder = Decoder2(x_dim, h_dim, z_dim)
-        self.classifier = Classifier2(x_dim, h_dim)
+        self.classifier = Classifier(x_dim, h_dim)
         
     def forward(self, x, label):
         z, mu, logvar = self.encoder(torch.cat([x, label], dim = -1))
@@ -188,7 +188,7 @@ class VAE12(nn.Module):
         super().__init__()
         self.encoder = Encoder2(x_dim, h_dim, z_dim)
         self.decoder = Decoder_norm(x_dim, h_dim, z_dim)
-        self.classifier = Classifier2(x_dim, h_dim)
+        self.classifier = Classifier(x_dim, h_dim)
         
     def forward(self, x, label):
         z, mu, logvar = self.encoder(torch.cat([x, label], dim = -1))
