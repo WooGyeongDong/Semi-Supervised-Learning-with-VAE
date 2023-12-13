@@ -108,5 +108,5 @@ for epoch in tqdm(range(config['epochs'])):
 #%%
 
 model_scripted = torch.jit.script(best_model.cpu()) # TorchScript 형식으로 내보내기
-model_scripted.save('model_scripted.pt')
+model_scripted.save('M1.pt')
 

@@ -25,7 +25,8 @@ config = {'input_dim' : 28*28,
 torch.manual_seed(23)
 
 #%%
-# wandb.init(project="VAE_Class", config=config)
+wb_log = False
+if wb_log: wandb.init(project="VAE_Class", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
@@ -88,7 +89,7 @@ def loss_function(x, label, u, model):
     return loss
 
 #%%
-M1 = torch.jit.load('model_scripted.pt')
+M1 = torch.jit.load('M1.pt')
 M1 = M1.to(device)
 M1.eval()
 model = mod.VAE12(x_dim=50, h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
@@ -123,7 +124,6 @@ for epoch in tqdm(range(config['epochs'])):
         optimizer.step()
         train_loss += loss.item()
     print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/len(labelled)))    
-    # wandb.log({'train_loss':train_loss/len(train_dataloader.dataset)})
 
     model.eval()
     val_loss = 0
@@ -138,7 +138,7 @@ for epoch in tqdm(range(config['epochs'])):
             loss = loss_function(x, label, u, model)
             val_loss += loss/len(label_validation)
         val.append(val_loss)
-        # wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
+        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
         print(epoch, val_loss)
         if abs(val_loss - best_loss) < 1e-3: # loss가 개선되지 않은 경우
             patience_check += 1
@@ -187,9 +187,10 @@ with torch.no_grad():
                                 torch.FloatTensor(onehot(7))]).to(device))[0]).reshape(-1,28,28) 
                                 for i in grid]
     latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
-    plt.imshow(latent_grid_img.permute(1,2,0))
-    plt.show()
-    # wandb.log({"latent generate": wandb.Image(latent_grid_img)})
+    if not wb_log: 
+        plt.imshow(latent_grid_img.permute(1,2,0))
+        plt.show()
+    if wb_log: wandb.log({"latent generate": wandb.Image(latent_grid_img)})
     
     model = model.to('cpu')
     M1 = M1.to('cpu')
