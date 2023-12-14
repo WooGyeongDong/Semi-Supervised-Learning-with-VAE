@@ -91,7 +91,21 @@ def loss_function(x, label, u, model):
 
 model = mod.VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
-optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
+# optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
+optimizer = torch.optim.RMSprop(model.parameters(), lr = 0.0003, alpha = 0.1, eps = 0.001, momentum = 0.9, centered = True)
+# alpha : first momentum decay = 0.1
+# eps : second momentum decay = 0.001
+# momentum
+# centered : initialization bisas correction
+import torch.nn as nn
+
+def init_weights(module):
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
+            nn.init.constant_(module.bias, 0)
+
+model.apply(init_weights)
+
 
 # parameter 초기값 N(0, 0.01)에서 random sampling
 # for param in model.parameters():
@@ -118,6 +132,7 @@ for epoch in tqdm(range(config['epochs'])):
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
+        print(loss)
     print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/len(labelled)))    
 
     model.eval()
