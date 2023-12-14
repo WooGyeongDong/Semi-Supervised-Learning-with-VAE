@@ -50,9 +50,9 @@ def log_prior(p):
 
 
 
-def elbo(x, mu_de, logvar_de , mu, logvar, label):
+def elbo(x, x_reconst, mu, logvar, label):
     kl_div = kld(mu, logvar)
-    reconst_loss = 0.5*torch.sum(((x-mu_de)**2)/torch.exp(logvar_de)+logvar_de, dim = -1)
+    reconst_loss = torch.sum(F.binary_cross_entropy(x_reconst, x, reduction='none'), dim = -1)
     prior = log_prior(label)
     L = kl_div + reconst_loss + prior
     
@@ -63,19 +63,20 @@ def onehot(digit):
     vector[digit] = 1
     return vector
 
-def loss_function(x, label, u, model):
+def loss_function(x, z1, label, u, uz1, model):
     # labelled data loss
-    x_reconst, mu_de, logvar_de, mu, logvar = model(x, label)
-    L = torch.mean(elbo(x, mu_de, logvar_de , mu, logvar, label))
+    x_reconst, mu, logvar = model(z1, label)
+    L = torch.mean(elbo(x, x_reconst, mu, logvar, label))
     
     # unlabelled data loss
-    u_prob = model.classify(u)
-    temp_label = torch.cat([F.one_hot(torch.zeros(len(u)).long() + i, num_classes=10) for i in range(10)], dim=0).float().to(device)
+    u_prob = model.classify(uz1)
+    temp_label = torch.cat([F.one_hot(torch.zeros(len(uz1)).long() + i, num_classes=10) for i in range(10)], dim=0).float().to(device)
+    extend_uz1 = uz1.repeat(10, 1)
     extend_u = u.repeat(10, 1)
 
-    u_reconst, u_mu_de, u_logvar_de, u_mu, u_logvar = model(extend_u, temp_label)
+    u_reconst, u_mu, u_logvar = model(extend_uz1, temp_label)
 
-    u_elbo = elbo(extend_u, u_mu_de, u_logvar_de, u_mu, u_logvar, temp_label)
+    u_elbo = elbo(extend_u, u_reconst, u_mu, u_logvar, temp_label)
     u_elbo = u_elbo.view_as(u_prob.t()).t()
     
     U = torch.sum(torch.mul(u_prob, u_elbo), dim = -1)
@@ -84,8 +85,8 @@ def loss_function(x, label, u, model):
     J = L + torch.mean(U + H)
 
     #Classification loss
-    prob = model.classify(x)
-    classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=1).mean()*0.1*config['labelled_size']
+    prob = model.classify(z1)
+    classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=-1).mean()*0.1*config['labelled_size']
 
     loss = J + classification_loss
     return loss
@@ -94,7 +95,7 @@ def loss_function(x, label, u, model):
 M1 = torch.jit.load('M1.pt')
 M1 = M1.to(device)
 M1.eval()
-model = mod.VAE12(x_dim=50, h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
+model = mod.VAE12(z1_dim=50, h_dim = config['hidden_dim'], z2_dim = config['latent_dim'], x_dim= config['input_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 
@@ -117,10 +118,10 @@ for epoch in tqdm(range(config['epochs'])):
         label = torch.stack([onehot(i) for i in target]).to(device)
         x = x.view(-1, img_size).to(device)
         u = u.view(-1, img_size).to(device)
-        x, _, _ = M1.encoder(x)
-        u, _, _ = M1.encoder(u)
+        z1, _, _ = M1.encoder(x)
+        uz1, _, _ = M1.encoder(u)
 
-        loss = loss_function(x, label, u, model)
+        loss = loss_function(x, z1, label, u, uz1, model)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -134,10 +135,10 @@ for epoch in tqdm(range(config['epochs'])):
             label = torch.stack([onehot(i) for i in target]).to(device)
             x = x.view(-1, img_size).to(device)
             u = u.view(-1, img_size).to(device)
-            x, _, _ = M1.encoder(x)
-            u, _, _ = M1.encoder(u)
-    
-            loss = loss_function(x, label, u, model)
+            z1, _, _ = M1.encoder(x)
+            uz1, _, _ = M1.encoder(u)
+
+            loss = loss_function(x, z1, label, u, uz1, model)
             val_loss += loss/len(label_validation)
         val.append(val_loss)
         if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
@@ -181,15 +182,15 @@ grid = generate_grid(2, 10, (-5,5))
 # %%
 with torch.no_grad(): 
 
-    latent_image = [M1.decoder(model.decoder(torch.cat([torch.FloatTensor(i), 
-                                torch.FloatTensor(onehot(7))]).to(device))[0]).reshape(-1,28,28) 
+    latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
+                                torch.FloatTensor(onehot(7))]).to(device)).reshape(-1,28,28) 
                                 for i in grid]
     latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
     if not wb_log: 
         plt.imshow(latent_grid_img.permute(1,2,0))
         plt.show()
     if wb_log: wandb.log({"latent generate": wandb.Image(latent_grid_img)})
-    
+
     model = model.to('cpu')
     M1 = M1.to('cpu')
     accuracy = 0
@@ -199,4 +200,19 @@ with torch.no_grad():
         pred_idx = torch.argmax(model.classify(x), dim=-1)
         accuracy += torch.mean((pred_idx.data == label).float())
     print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
+
+    test_data = next(iter(test_loader))
+    image = test_data[0][:10]
+    test_label = test_data[1][:10]
+    latent = [model.encoder(torch.cat([M1.encoder(image[i].view(-1, img_size).squeeze())[0], torch.FloatTensor(onehot(test_label[i]))]))[0] for i in range(10)]
+    analogies_image = []
+    for i, z in enumerate(latent):
+        gen_image = [model.decoder(torch.cat([z, torch.FloatTensor(onehot(j))])).reshape(-1,28,28) 
+                                    for j in range(10)]
+        gen_image.insert(0, image[i])
+        analogies_image.extend(gen_image)
+    gen_grid_img = torchvision.utils.make_grid(analogies_image, nrow=11)
+    if not wb_log: plt.imshow(gen_grid_img.permute(1,2,0))
+    if wb_log: wandb.log({"analogies generate": wandb.Image(gen_grid_img)})
+
 # %%
