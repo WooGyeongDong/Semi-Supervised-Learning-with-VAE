@@ -3,7 +3,7 @@ import torch
 import torch.optim 
 import torch.nn.functional as F
 import numpy as np
-from ipypb import ipb
+from tqdm import tqdm
 import copy
 import wandb
 import importlib
@@ -108,7 +108,7 @@ best_loss = config['best_loss']
 patience_limit = config['patience_limit']
 patience_check = 0 # 현재 몇 epoch 연속으로 loss 개선이 안되는지를 기록
 val = []
-for epoch in ipb(range(config['epochs'])):
+for epoch in tqdm(range(config['epochs'])):
     model.train()
     train_loss = 0
     for (x, target), (u, _) in zip(labelled, unlabelled):
