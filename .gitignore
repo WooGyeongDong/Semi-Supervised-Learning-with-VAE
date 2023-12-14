@@ -150,20 +150,8 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
-Semi-supervised learning with deep generative models/data_utils.py
-Semi-supervised learning with deep generative models/M1.py
-Semi-supervised learning with deep generative models/M2.py
-Semi-supervised learning with deep generative models/main.py
-Semi-supervised learning with deep generative models/module.py
-Semi-supervised learning with deep generative models/data/MNIST/raw/t10k-images-idx3-ubyte
-Semi-supervised learning with deep generative models/data/MNIST/raw/t10k-images-idx3-ubyte.gz
-Semi-supervised learning with deep generative models/data/MNIST/raw/t10k-labels-idx1-ubyte
-Semi-supervised learning with deep generative models/data/MNIST/raw/t10k-labels-idx1-ubyte.gz
-Semi-supervised learning with deep generative models/data/MNIST/raw/train-images-idx3-ubyte
-Semi-supervised learning with deep generative models/data/MNIST/raw/train-images-idx3-ubyte.gz
-Semi-supervised learning with deep generative models/data/MNIST/raw/train-labels-idx1-ubyte
-Semi-supervised learning with deep generative models/data/MNIST/raw/train-labels-idx1-ubyte.gz
-Semi-supervised learning with deep generative models/model/best_M1_state.pt
-Semi-supervised learning with deep generative models/model/best_M1.pt
+Semi-supervised learning with deep generative models/
 output/
 wandb/
+test.sh
+

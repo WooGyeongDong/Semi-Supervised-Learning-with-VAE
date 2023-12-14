@@ -13,17 +13,18 @@ importlib.reload(mod)
 #%%
 config = {'input_dim' : 28*28,
           'hidden_dim' : 500,
-          'latent_dim' : 10,
+          'latent_dim' : 50,
           'batch_size' : 500,
           'labelled_size' : 3000,
-          'epochs' : 50,
+          'epochs' : 500,
           'lr' : 0.0003,
           'best_loss' : 10**9,
           'patience_limit' : 3}
 
 # set seed
-torch.manual_seed(23)
-wb_log = False
+seed = 423
+# torch.manual_seed(seed)
+wb_log = True
 #%%
 if wb_log: wandb.init(project="VAE_M2", config=config)
 is_cuda = torch.cuda.is_available()
@@ -32,7 +33,7 @@ print('Current cuda device is', device)
 #%%
 labelled, unlabelled, label_validation, unlabel_validation, test_loader = load_semi_MNIST(config['batch_size'],
                                                                                           config['labelled_size'],
-                                                                                            seed_value=23)
+                                                                                            seed_value=seed)
 
 #%%
 def kld(mu, logvar):
@@ -92,10 +93,19 @@ def loss_function(x, label, u, model):
 model = mod.VAE2(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
+# optimizer = torch.optim.RMSprop(model.parameters(), lr = 0.0003, alpha = 0.1, eps = 0.001, momentum = 0.9, centered = True)
+# alpha : first momentum decay = 0.1
+# eps : second momentum decay = 0.001
+# momentum
+# centered : initialization bisas correction
+import torch.nn as nn
 
-# parameter 초기값 N(0, 0.01)에서 random sampling
-# for param in model.parameters():
-#     torch.nn.init.normal_(param, 0, 0.001)
+def init_weights(module):
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
+            nn.init.constant_(module.bias, 0)
+
+model.apply(init_weights)
 
 #%%
 img_size = config['input_dim']  
@@ -169,15 +179,16 @@ def generate_grid(dim, grid_size, grid_range):
 grid = generate_grid(2, 10, (-5,5))
 
 with torch.no_grad():
-    for j in range(10):
-        latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
-                                    torch.FloatTensor(onehot(j))]).to(device)).reshape(-1,28,28) 
-                                    for i in grid]
-        latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
-        if not wb_log: 
-            plt.imshow(latent_grid_img.permute(1,2,0))
-            plt.show()
-        if wb_log: wandb.log({"latent generate": wandb.Image(latent_grid_img)})
+    if config['latent_dim'] == 2 :
+        for j in range(10):
+            latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
+                                        torch.FloatTensor(onehot(j))]).to(device)).reshape(-1,28,28) 
+                                        for i in grid]
+            latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
+            if not wb_log: 
+                plt.imshow(latent_grid_img.permute(1,2,0))
+                plt.show()
+            if wb_log: wandb.log({"latent generate": wandb.Image(latent_grid_img)})
 
     model = model.to('cpu')
     accuracy = 0
@@ -186,7 +197,8 @@ with torch.no_grad():
         pred_idx = torch.argmax(model.classify(x), dim=-1)
         accuracy += torch.mean((pred_idx.data == label).float())
     next(iter(test_loader))[0][1]
-    print(f'{accuracy.item()/len(test_loader)*100:.2f}%')   
+    print(f'{accuracy.item()/len(test_loader)*100:.2f}%')
+    if wb_log: wandb.log({'Accuracy': accuracy.item()/len(test_loader)*100})  
 
     test_data = next(iter(test_loader))
     image = test_data[0][:10]
