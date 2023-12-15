@@ -99,9 +99,6 @@ model = mod.VAE12(z1_dim=50, h_dim = config['hidden_dim'], z2_dim = config['late
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 
-# parameter 초기값 N(0, 0.01)에서 random sampling
-# for param in model.parameters():
-#     torch.nn.init.normal_(param, 0, 0.001)
 
 #%%
 img_size = config['input_dim']  
@@ -181,6 +178,7 @@ grid = generate_grid(2, 10, (-5,5))
 
 # %%
 with torch.no_grad(): 
+    # manifold image
     if config['latent_dim'] == 2 :
         for j in range(10):
             latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
@@ -192,6 +190,7 @@ with torch.no_grad():
                 plt.show()
             if wb_log: wandb.log({"latent generate": wandb.Image(latent_grid_img)})
 
+    # accuracy
     model = model.to('cpu')
     M1 = M1.to('cpu')
     accuracy = 0
@@ -203,6 +202,7 @@ with torch.no_grad():
     print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
     if wb_log: wandb.log({'Accuracy': accuracy.item()/len(test_loader)*100})
 
+    # analogies
     test_data = next(iter(test_loader))
     image = test_data[0][:10]
     test_label = test_data[1][:10]
