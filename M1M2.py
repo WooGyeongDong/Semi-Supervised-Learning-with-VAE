@@ -25,7 +25,7 @@ config = {'input_dim' : 28*28,
 torch.manual_seed(23)
 
 #%%
-wb_log = True
+wb_log = False
 if wb_log: wandb.init(project="VAE_M1M2", name='2D', config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')

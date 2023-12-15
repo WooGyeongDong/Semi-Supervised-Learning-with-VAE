@@ -183,6 +183,11 @@ class VAE12(nn.Module):
         y = self.classifier(x)
         return y
     
+    def init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
+            nn.init.constant_(module.bias, 0)
+    
 class Decoder_norm(nn.Module):
     def __init__(self, x_dim, h_dim, z_dim):
         super().__init__()

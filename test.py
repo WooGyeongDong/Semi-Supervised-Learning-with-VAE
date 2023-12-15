@@ -25,7 +25,7 @@ config = {'input_dim' : 28*28,
 torch.manual_seed(23)
 
 #%%
-wb_log = True
+wb_log = False
 if wb_log: wandb.init(project="VAE_M1M2", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
@@ -99,13 +99,6 @@ model = mod.VAE123(x_dim=50, h_dim = config['hidden_dim'], z_dim = config['laten
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 
 
-def init_weights(module):
-        if isinstance(module, torch.nn.Linear):
-            torch.nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
-            torch.nn.init.constant_(module.bias, 0)
-
-model.apply(init_weights)
-
 #%%
 img_size = config['input_dim']  
 best_loss = config['best_loss']
@@ -158,28 +151,6 @@ for epoch in tqdm(range(config['epochs'])):
             best_model = copy.deepcopy(model)
             patience_check = 0
 
-# #%%
-# import torchvision.utils
-# import matplotlib.pyplot as plt
-
-
-# def generate_grid(dim, grid_size, grid_range):
-#     """
-#     dim: 차원 수
-#     grid_size: 그리드 크기
-#     grid_range: 그리드의 범위, (시작, 끝)
-#     """
-#     grid = []
-#     for i in range(dim):
-#         axis_values = np.linspace(grid_range[0], grid_range[1], grid_size)
-#         grid.append(axis_values)
-
-#     grid_points = np.meshgrid(*grid)
-#     grid_points = np.column_stack([point.ravel() for point in grid_points])
-
-#     return grid_points
-
-# grid = generate_grid(2, 10, (-5,5))
 
 
 # %%
