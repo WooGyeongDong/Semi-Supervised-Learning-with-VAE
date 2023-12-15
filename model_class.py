@@ -175,3 +175,43 @@ class VAE12(nn.Module):
         y = self.classifier(x)
         return y
     
+class Decoder_norm(nn.Module):
+    def __init__(self, x_dim, h_dim, z_dim):
+        super().__init__()
+
+        # 1st hidden layer
+        self.fc1 = nn.Sequential(
+            nn.Linear(z_dim+10, h_dim),
+            nn.Softplus(),
+            nn.Linear(h_dim, h_dim),
+            nn.Softplus()
+        )
+
+        # output layer
+        self.mu = nn.Linear(h_dim, x_dim)
+        self.logvar = nn.Linear(h_dim, x_dim)
+
+    def forward(self, z):
+        z = self.fc1(z)
+        
+        mu_de = torch.sigmoid(self.mu(z))
+        logvar_de = self.logvar(z)
+        
+        x_reconst = reparameterization(mu_de, logvar_de)
+        return x_reconst, mu_de, logvar_de
+
+class VAE123(nn.Module):
+    def __init__(self, x_dim, h_dim, z_dim):
+        super().__init__()
+        self.encoder = Encoder2(x_dim, h_dim, z_dim)
+        self.decoder = Decoder_norm(x_dim, h_dim, z_dim)
+        self.classifier = Classifier(x_dim, h_dim)
+        
+    def forward(self, x, label):
+        z, mu, logvar = self.encoder(torch.cat([x, label], dim = -1))
+        x_reconst, mu_de, logvar_de = self.decoder(torch.cat([z, label], dim = -1))
+        return x_reconst, mu_de, logvar_de, mu, logvar
+    
+    def classify(self, x):
+        y = self.classifier(x)
+        return y
