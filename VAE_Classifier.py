@@ -23,7 +23,7 @@ config = {'input_dim' : 28*28,
 
 # set seed
 seed = 423
-# torch.manual_seed(seed)
+torch.manual_seed(seed)
 wb_log = False
 #%%
 if wb_log: wandb.init(project="VAE_M2", config=config)
@@ -98,15 +98,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 # eps : second momentum decay = 0.001
 # momentum
 # centered : initialization bisas correction
-import torch.nn as nn
 
-
-def init_weights(module):
-        if isinstance(module, nn.Linear):
-            nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
-            nn.init.constant_(module.bias, 0)
-
-model.apply(init_weights)
 
 #%%
 img_size = config['input_dim']  
@@ -129,7 +121,6 @@ for epoch in tqdm(range(config['epochs'])):
         loss.backward()
         optimizer.step()
         train_loss += loss.item()
-        print(loss)
     print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/len(labelled)))    
 
     model.eval()
@@ -181,6 +172,7 @@ def generate_grid(dim, grid_size, grid_range):
 grid = generate_grid(2, 10, (-5,5))
 
 with torch.no_grad():
+    # manifold image
     if config['latent_dim'] == 2 :
         for j in range(10):
             latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
@@ -192,6 +184,7 @@ with torch.no_grad():
                 plt.show()
             if wb_log: wandb.log({"latent generate": wandb.Image(latent_grid_img)})
 
+    # accuracy
     model = model.to('cpu')
     accuracy = 0
     for x, label in test_loader:
@@ -202,6 +195,7 @@ with torch.no_grad():
     print(f'{accuracy.item()/len(test_loader)*100:.2f}%')
     if wb_log: wandb.log({'Accuracy': accuracy.item()/len(test_loader)*100})  
 
+    # analogies
     test_data = next(iter(test_loader))
     image = test_data[0][:10]
     test_label = test_data[1][:10]

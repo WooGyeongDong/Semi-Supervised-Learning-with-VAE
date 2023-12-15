@@ -146,6 +146,7 @@ class VAE2(nn.Module):
         self.encoder = Encoder2(x_dim, h_dim, z_dim)
         self.decoder = Decoder2(x_dim, h_dim, z_dim)
         self.classifier = Classifier(x_dim, h_dim)
+        self.apply(self.init_weights)
         
     def forward(self, x, label):
         z, mu, logvar = self.encoder(torch.cat([x, label], dim = -1))
@@ -155,6 +156,12 @@ class VAE2(nn.Module):
     def classify(self, x):
         y = self.classifier(x)
         return y
+    
+    def init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
+            nn.init.constant_(module.bias, 0)
+
 
 #################################################################
 
@@ -165,6 +172,7 @@ class VAE12(nn.Module):
         self.encoder = Encoder2(z1_dim, h_dim, z2_dim)
         self.decoder = Decoder2(x_dim, h_dim, z2_dim)
         self.classifier = Classifier(z1_dim, h_dim)
+        self.apply(self.init_weights)
         
     def forward(self, x, label):
         z, mu, logvar = self.encoder(torch.cat([x, label], dim = -1))
@@ -174,4 +182,9 @@ class VAE12(nn.Module):
     def classify(self, x):
         y = self.classifier(x)
         return y
+    
+    def init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
+            nn.init.constant_(module.bias, 0)
     
