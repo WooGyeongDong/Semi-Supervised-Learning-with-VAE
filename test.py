@@ -16,7 +16,7 @@ config = {'input_dim' : 28*28,
           'latent_dim' : 50,
           'batch_size' : 500,
           'labelled_size' : 3000,
-          'epochs' : 200,
+          'epochs' : 1000,
           'lr' : 0.0003,
           'best_loss' : 10**9,
           'patience_limit' : 3}
@@ -25,8 +25,8 @@ config = {'input_dim' : 28*28,
 torch.manual_seed(23)
 
 #%%
-wb_log = False
-if wb_log: wandb.init(project="VAE_M1M2", config=config)
+wb_log = True
+if wb_log: wandb.init(project="ACC", name='z2z', config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
@@ -137,8 +137,8 @@ for epoch in tqdm(range(config['epochs'])):
             loss = loss_function(x, label, u, model)
             val_loss += loss/len(label_validation)
         val.append(val_loss)
-        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
         print(epoch, val_loss)
+
         if abs(val_loss - best_loss) < 1e-3: # loss가 개선되지 않은 경우
             patience_check += 1
 
@@ -150,6 +150,15 @@ for epoch in tqdm(range(config['epochs'])):
             best_loss = val_loss
             best_model = copy.deepcopy(model)
             patience_check = 0
+
+        accuracy = 0
+        for x, label in test_loader:
+            x = x.view(-1, img_size).to(device)
+            x, _, _ = M1.encoder(x)
+            pred_idx = torch.argmax(model.classify(x), dim=-1)
+            accuracy += torch.mean((pred_idx.data.to(device) == label.to(device)).float())
+        print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
+        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss, 'Accuracy': accuracy.item()/len(test_loader)*100})
 
 
 

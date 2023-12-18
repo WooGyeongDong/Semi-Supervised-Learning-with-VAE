@@ -17,10 +17,10 @@ config = {'input_dim' : 28*28,
           'batch_size' : 100,
           'epochs' : 500,
           'lr' : 0.0003,
-          'best_loss' : 10**9,
-          'patience_limit' : 3}
+          'check_rate' : 1e-3,
+          'patience_limit' : 10}
 #%%
-# wandb.init(project="VAE_M1", config=config)
+wandb.init(project="VAE_M1", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
@@ -37,7 +37,7 @@ optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=
 
 #%% 
 img_size = config['input_dim']  
-best_loss = config['best_loss']
+best_loss = 10**9
 patience_limit = config['patience_limit']
 patience_check = 0 # 현재 몇 epoch 연속으로 loss 개선이 안되는지를 기록
 val = []
@@ -69,9 +69,9 @@ for epoch in tqdm(range(config['epochs'])):
             loss = mod.loss_func(x_val, x_val_reconst, mu, logvar).item()
             val_loss += loss/len(test_dataloader.dataset)
         val.append(val_loss)
-        # wandb.log({'train_loss':train_loss/len(train_dataloader.dataset), 'valid_loss': val_loss})
+        wandb.log({'train_loss':train_loss/len(train_dataloader.dataset), 'valid_loss': val_loss})
         print(epoch, val_loss)
-        if abs(val_loss - best_loss) < 0.05: # loss가 개선되지 않은 경우
+        if val_loss > best_loss: # loss가 개선되지 않은 경우
             patience_check += 1
 
             if patience_check >= patience_limit: # early stopping 조건 만족 시 조기 종료

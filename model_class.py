@@ -83,8 +83,6 @@ class Classifier(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(x_dim, h_dim),
             nn.Softplus(),
-            nn.Linear(h_dim, h_dim),
-            nn.Softplus(),
             nn.Linear(h_dim, 10)
         )
 
@@ -101,8 +99,6 @@ class Encoder2(nn.Module):
         # 1st hidden layer
         self.fc1 = nn.Sequential(
             nn.Linear(x_dim+10, h_dim),
-            nn.Softplus(),
-            nn.Linear(h_dim, h_dim),
             nn.Softplus()
         )
 
@@ -113,7 +109,7 @@ class Encoder2(nn.Module):
     def forward(self, x):
         x = self.fc1(x)
         mu = self.mu(x)
-        logvar = F.softplus(self.logvar(x))
+        logvar = self.logvar(x)
 
         z = reparameterization(mu, logvar)
         return z, mu, logvar
@@ -126,8 +122,6 @@ class Decoder2(nn.Module):
         # 1st hidden layer
         self.fc1 = nn.Sequential(
             nn.Linear(z_dim + 10, h_dim),
-            nn.Softplus(),
-            nn.Linear(h_dim, h_dim),
             nn.Softplus()
         )
 
@@ -195,8 +189,6 @@ class Decoder_norm(nn.Module):
         # 1st hidden layer
         self.fc1 = nn.Sequential(
             nn.Linear(z_dim+10, h_dim),
-            nn.Softplus(),
-            nn.Linear(h_dim, h_dim),
             nn.Softplus()
         )
 

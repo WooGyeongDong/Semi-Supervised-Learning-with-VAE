@@ -16,17 +16,17 @@ config = {'input_dim' : 28*28,
           'latent_dim' : 50,
           'batch_size' : 500,
           'labelled_size' : 3000,
-          'epochs' : 500,
+          'epochs' : 1000,
           'lr' : 0.0003,
           'best_loss' : 10**9,
-          'patience_limit' : 3}
+          'patience_limit' : 50}
 
 # set seed
 seed = 423
 torch.manual_seed(seed)
-wb_log = False
+wb_log = True
 #%%
-if wb_log: wandb.init(project="VAE_M2", config=config)
+if wb_log: wandb.init(project="ACC", name = f'M2/{config["labelled_size"]}', config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
@@ -102,7 +102,7 @@ optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 
 #%%
 img_size = config['input_dim']  
-best_loss = config['best_loss']
+best_acc = 0
 patience_limit = config['patience_limit']
 patience_check = 0 # 현재 몇 epoch 연속으로 loss 개선이 안되는지를 기록
 val = []
@@ -134,17 +134,37 @@ for epoch in tqdm(range(config['epochs'])):
             loss = loss_function(x, label, u, model)
             val_loss += loss/len(label_validation)
         val.append(val_loss)
-        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
         print(epoch, val_loss)
-        if abs(val_loss - best_loss) < 1: # loss가 개선되지 않은 경우
+
+        # if abs(val_loss - best_loss) < 1: # loss가 개선되지 않은 경우
+        #     patience_check += 1
+
+        #     if patience_check >= patience_limit: # early stopping 조건 만족 시 조기 종료
+        #         print("Learning End. Best_Loss:{:6f}".format(best_loss))
+        #         break
+
+        # else: # loss가 개선된 경우
+        #     best_loss = val_loss
+        #     best_model = copy.deepcopy(model)
+        #     patience_check = 0
+        
+        accuracy = 0
+        for x, label in test_loader:
+            x = x.view(-1, img_size).to(device)
+            pred_idx = torch.argmax(model.classify(x), dim=-1)
+            accuracy += torch.mean((pred_idx.data.to(device) == label.to(device)).float())
+        print(f'{accuracy.item()/len(test_loader)*100:.2f}%')
+        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss, 'Accuracy': accuracy.item()/len(test_loader)*100})
+
+        if accuracy < best_acc: # loss가 개선되지 않은 경우
             patience_check += 1
 
             if patience_check >= patience_limit: # early stopping 조건 만족 시 조기 종료
-                print("Learning End. Best_Loss:{:6f}".format(best_loss))
-                break
+                print("Learning End. Best_ACC:{:6f}".format(best_acc.item()/len(test_loader)*100))
+                # break
 
         else: # loss가 개선된 경우
-            best_loss = val_loss
+            best_acc = accuracy
             best_model = copy.deepcopy(model)
             patience_check = 0
 
@@ -175,7 +195,7 @@ with torch.no_grad():
     # manifold image
     if config['latent_dim'] == 2 :
         for j in range(10):
-            latent_image = [model.decoder(torch.cat([torch.FloatTensor(i), 
+            latent_image = [best_model.decoder(torch.cat([torch.FloatTensor(i), 
                                         torch.FloatTensor(onehot(j))]).to(device)).reshape(-1,28,28) 
                                         for i in grid]
             latent_grid_img = torchvision.utils.make_grid(latent_image, nrow=10)
@@ -185,24 +205,23 @@ with torch.no_grad():
             if wb_log: wandb.log({"latent generate": wandb.Image(latent_grid_img)})
 
     # accuracy
-    model = model.to('cpu')
+    best_model = best_model.to('cpu')
     accuracy = 0
     for x, label in test_loader:
         x = x.view(-1, img_size)
-        pred_idx = torch.argmax(model.classify(x), dim=-1)
+        pred_idx = torch.argmax(best_model.classify(x), dim=-1)
         accuracy += torch.mean((pred_idx.data == label).float())
-    next(iter(test_loader))[0][1]
     print(f'{accuracy.item()/len(test_loader)*100:.2f}%')
-    if wb_log: wandb.log({'Accuracy': accuracy.item()/len(test_loader)*100})  
+    if wb_log: wandb.log({'Best_Accuracy': accuracy.item()/len(test_loader)*100})  
 
     # analogies
     test_data = next(iter(test_loader))
     image = test_data[0][:10]
     test_label = test_data[1][:10]
-    latent = [model.encoder(torch.cat([image[i].view(-1, img_size).squeeze(), torch.FloatTensor(onehot(test_label[i]))]))[0] for i in range(10)]
+    latent = [best_model.encoder(torch.cat([image[i].view(-1, img_size).squeeze(), torch.FloatTensor(onehot(test_label[i]))]))[0] for i in range(10)]
     analogies_image = []
     for i, z in enumerate(latent):
-        gen_image = [model.decoder(torch.cat([z, torch.FloatTensor(onehot(j))])).reshape(-1,28,28) 
+        gen_image = [best_model.decoder(torch.cat([z, torch.FloatTensor(onehot(j))])).reshape(-1,28,28) 
                                     for j in range(10)]
         gen_image.insert(0, image[i])
         analogies_image.extend(gen_image)
