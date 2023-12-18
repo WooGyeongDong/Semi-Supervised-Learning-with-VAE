@@ -98,7 +98,8 @@ M1.eval()
 model = mod.VAE12(z1_dim=50, h_dim = config['hidden_dim'], z2_dim = config['latent_dim'], x_dim= config['input_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
-
+optimizer = torch.optim.Adam([{'params': model.parameters(), 'lr':3e-4, 'betas':(0.9, 0.999)},
+                              {'params': M1.parameters(), 'lr':3e-4, 'betas':(0.9, 0.999)}])
 
 #%%
 img_size = config['input_dim']  

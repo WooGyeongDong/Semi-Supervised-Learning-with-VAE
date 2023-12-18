@@ -155,3 +155,7 @@ output/
 wandb/
 test.sh
 
+data/
+MNIST/
+
+
