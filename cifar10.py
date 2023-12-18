@@ -25,7 +25,7 @@ config = {'input_dim' : 3*32*32,
 torch.manual_seed(23)
 
 #%%
-wb_log = False
+wb_log = True
 if wb_log: wandb.init(project="cifar10", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
@@ -125,5 +125,5 @@ for epoch in tqdm(range(config['epochs'])):
             pred_idx = torch.argmax(model.classify(x), dim=-1)
             accuracy += torch.mean((pred_idx.data.to(device) == label.to(device)).float())
         print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
-        if wb_log: wandb.log({"Accuracy": accuracy.item()/len(test_loader)*100})
+        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), "Accuracy": accuracy.item()/len(test_loader)*100})
 # %%
