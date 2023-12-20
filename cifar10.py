@@ -12,8 +12,8 @@ import model_class as mod
 importlib.reload(mod)
 #%%
 config = {'input_dim' : 3*32*32,
-          'hidden_dim' : 500,
-          'latent_dim' : 50,
+          'hidden_dim' : 1024,
+          'latent_dim' : 500,
           'batch_size' : 500,
           'labelled_size' : 3000,
           'epochs' : 200,
@@ -93,7 +93,7 @@ def loss_function(x, label, u, model):
 
 model = mod.VAE123(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
-optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
 
 
 #%%

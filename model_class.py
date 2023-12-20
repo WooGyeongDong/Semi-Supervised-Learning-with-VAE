@@ -16,9 +16,9 @@ class Encoder(nn.Module):
         # 1st hidden layer
         self.fc1 = nn.Sequential(
             nn.Linear(x_dim, h_dim),
-            nn.Softplus(),
+            nn.Tanh(),
             nn.Linear(h_dim, h_dim),
-            nn.Softplus() 
+            nn.Tanh() 
         )
 
         # output layer

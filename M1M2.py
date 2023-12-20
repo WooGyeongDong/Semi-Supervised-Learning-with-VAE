@@ -13,20 +13,20 @@ importlib.reload(mod)
 #%%
 config = {'input_dim' : 28*28,
           'hidden_dim' : 500,
-          'latent_dim' : 2,
+          'latent_dim' : 50,
           'batch_size' : 500,
           'labelled_size' : 3000,
-          'epochs' : 100,
+          'epochs' : 1000,
           'lr' : 0.0003,
           'best_loss' : 10**9,
-          'patience_limit' : 3}
+          'patience_limit' : 100}
 
 # set seed
 torch.manual_seed(23)
 
 #%%
-wb_log = False
-if wb_log: wandb.init(project="VAE_M1M2", name='2D', config=config)
+wb_log = True
+if wb_log: wandb.init(project="ACC", name=f'M1M2all/{config["labelled_size"]}', config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
 print('Current cuda device is', device)
@@ -86,7 +86,7 @@ def loss_function(x, z1, label, u, uz1, model):
 
     #Classification loss
     prob = model.classify(z1)
-    classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=-1).mean()*0.1*config['labelled_size']
+    classification_loss = -torch.sum(label * torch.log(prob + 1e-8), dim=-1).mean()*0.1*50000
 
     loss = J + classification_loss
     return loss
@@ -94,16 +94,16 @@ def loss_function(x, z1, label, u, uz1, model):
 #%%
 M1 = torch.jit.load('M1.pt')
 M1 = M1.to(device)
-M1.eval()
+# M1.eval()
 model = mod.VAE12(z1_dim=50, h_dim = config['hidden_dim'], z2_dim = config['latent_dim'], x_dim= config['input_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
 optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
-optimizer = torch.optim.Adam([{'params': model.parameters(), 'lr':3e-4, 'betas':(0.9, 0.999)},
-                              {'params': M1.parameters(), 'lr':3e-4, 'betas':(0.9, 0.999)}])
+# optimizer = torch.optim.Adam([{'params': model.parameters(), 'lr':3e-4, 'betas':(0.9, 0.999)},
+#                               {'params': M1.parameters(), 'lr':3e-4, 'betas':(0.9, 0.999)}])
 
 #%%
 img_size = config['input_dim']  
-best_loss = config['best_loss']
+best_acc = 0
 patience_limit = config['patience_limit']
 patience_check = 0 # 현재 몇 epoch 연속으로 loss 개선이 안되는지를 기록
 val = []
@@ -139,19 +139,41 @@ for epoch in tqdm(range(config['epochs'])):
             loss = loss_function(x, z1, label, u, uz1, model)
             val_loss += loss/len(label_validation)
         val.append(val_loss)
-        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss})
         print(epoch, val_loss)
-        if abs(val_loss - best_loss) < 1e-3: # loss가 개선되지 않은 경우
+
+        # if abs(val_loss - best_loss) < 1e-3: # loss가 개선되지 않은 경우
+        #     patience_check += 1
+
+        #     if patience_check >= patience_limit: # early stopping 조건 만족 시 조기 종료
+        #         print("Learning End. Best_Loss:{:6f}".format(best_loss))
+        #         break
+
+        # else: # loss가 개선된 경우
+        #     best_loss = val_loss
+        #     best_model = copy.deepcopy(model)
+        #     patience_check = 0
+
+        accuracy = 0
+        for x, label in test_loader:
+            x = x.view(-1, img_size).to(device)
+            x, _, _ = M1.encoder(x)
+            pred_idx = torch.argmax(model.classify(x), dim=-1)
+            accuracy += torch.mean((pred_idx.data.to(device) == label.to(device)).float())
+        print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
+        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss, 'Accuracy': accuracy.item()/len(test_loader)*100})
+
+        if accuracy < best_acc: # loss가 개선되지 않은 경우
             patience_check += 1
 
             if patience_check >= patience_limit: # early stopping 조건 만족 시 조기 종료
-                print("Learning End. Best_Loss:{:6f}".format(best_loss))
-                break
+                print("Learning End. Best_ACC:{:6f}".format(best_acc.item()/len(test_loader)*100))
+                # break
 
         else: # loss가 개선된 경우
-            best_loss = val_loss
+            best_acc = accuracy
             best_model = copy.deepcopy(model)
             patience_check = 0
+
 
 #%%
 import torchvision.utils
@@ -201,7 +223,7 @@ with torch.no_grad():
         pred_idx = torch.argmax(model.classify(x), dim=-1)
         accuracy += torch.mean((pred_idx.data == label).float())
     print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
-    if wb_log: wandb.log({'Accuracy': accuracy.item()/len(test_loader)*100})
+    if wb_log: wandb.log({'Best_Accuracy': accuracy.item()/len(test_loader)*100})
 
     # analogies
     test_data = next(iter(test_loader))
