@@ -25,7 +25,7 @@ config = {'input_dim' : 3*32*32,
 torch.manual_seed(23)
 
 #%%
-wb_log = False
+wb_log = True
 if wb_log: wandb.init(project="cifar10", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
