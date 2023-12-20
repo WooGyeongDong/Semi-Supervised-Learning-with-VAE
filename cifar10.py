@@ -127,3 +127,32 @@ for epoch in tqdm(range(config['epochs'])):
         print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
         if wb_log: wandb.log({"Accuracy": accuracy.item()/len(test_loader)*100})
 # %%
+import torchvision.utils
+import matplotlib.pyplot as plt
+import numpy as np
+
+model = torch.jit.load('cifar10.pt')
+
+# 이미지를 보여주기 위한 함수
+
+def imshow(img):
+    img = img / 2 + 0.5     # unnormalize
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg, (1, 2, 0)))
+    plt.show()
+
+
+# 학습용 이미지를 무작위로 가져오기
+dataiter = iter(test_loader)
+images, labels = next(dataiter)
+
+# 이미지 보여주기
+imshow(torchvision.utils.make_grid(images[3]))
+    
+
+images[1].shape
+
+x = images[1].view(-1, img_size).squeeze()
+label = onehot(labels[3])
+x_reconst, mu_de, logvar_de, mu, logvar = model(x, label)
+imshow(x_reconst.reshape([3, 32, 32]).detach())
