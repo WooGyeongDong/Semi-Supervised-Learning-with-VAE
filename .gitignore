@@ -157,5 +157,6 @@ test.sh
 
 data/
 MNIST/
-
+CIFAR10/
+semi_supervised_pytorch.py
 
