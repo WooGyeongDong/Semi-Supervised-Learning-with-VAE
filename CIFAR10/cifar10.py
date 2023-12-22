@@ -16,7 +16,7 @@ config = {'input_dim' : 3*32*32,
           'latent_dim' : 500,
           'batch_size' : 500,
           'labelled_size' : 3000,
-          'epochs' : 200,
+          'epochs' : 30,
           'lr' : 0.0003,
           'best_loss' : 10**9,
           'patience_limit' : 3}
@@ -25,7 +25,7 @@ config = {'input_dim' : 3*32*32,
 torch.manual_seed(23)
 
 #%%
-wb_log = True
+wb_log = False
 if wb_log: wandb.init(project="cifar10", config=config)
 is_cuda = torch.cuda.is_available()
 device = torch.device('cuda' if is_cuda else 'cpu')
@@ -90,15 +90,17 @@ def loss_function(x, label, u, model):
     return loss
 
 #%%
-
-model = mod.VAE123(x_dim=config['input_dim'], h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
+M1 = torch.jit.load('vcifar10.pt')
+M1 = M1.to(device)
+M1.eval()
+model = mod.VAE123(x_dim=50, h_dim = config['hidden_dim'], z_dim = config['latent_dim']).to(device)
 # optimizer = torch.optim.RMSprop(model.parameters(), lr = config['lr'], momentum=0.1)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-3, betas=(0.9, 0.999))
+optimizer = torch.optim.Adam(model.parameters(), lr=3e-4, betas=(0.9, 0.999))
 
 
 #%%
 img_size = config['input_dim']  
-best_loss = config['best_loss']
+best_acc = 0
 patience_limit = config['patience_limit']
 patience_check = 0 # 현재 몇 epoch 연속으로 loss 개선이 안되는지를 기록
 val = []
@@ -106,10 +108,13 @@ for epoch in tqdm(range(config['epochs'])):
     model.train()
     train_loss = 0
     for (x, target), (u, _) in zip(labelled, unlabelled):
+        
         # data processing
         label = torch.stack([onehot(i) for i in target]).to(device)
         x = x.view(-1, img_size).to(device)
         u = u.view(-1, img_size).to(device)
+        x, _, _ = M1.encoder(x)
+        u, _, _ = M1.encoder(u)
 
         loss = loss_function(x, label, u, model)
         optimizer.zero_grad()
@@ -118,41 +123,28 @@ for epoch in tqdm(range(config['epochs'])):
         train_loss += loss.item()
     print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/len(labelled)))    
 
-    with torch.no_grad(): 
+    model.eval()
+    val_loss = 0
+    with torch.no_grad():
+
         accuracy = 0
         for x, label in test_loader:
             x = x.view(-1, img_size).to(device)
+            x, _, _ = M1.encoder(x)
             pred_idx = torch.argmax(model.classify(x), dim=-1)
             accuracy += torch.mean((pred_idx.data.to(device) == label.to(device)).float())
         print(f'{accuracy.item()/len(test_loader)*100:.2f}%') 
-        if wb_log: wandb.log({"Accuracy": accuracy.item()/len(test_loader)*100})
-# %%
-import torchvision.utils
-import matplotlib.pyplot as plt
-import numpy as np
+        if wb_log: wandb.log({'train_loss':train_loss/len(labelled), 'valid_loss': val_loss, 'Accuracy': accuracy.item()/len(test_loader)*100})
 
-model = torch.jit.load('cifar10.pt')
+        if accuracy < best_acc: # loss가 개선되지 않은 경우
+            patience_check += 1
 
-# 이미지를 보여주기 위한 함수
+            if patience_check >= patience_limit: # early stopping 조건 만족 시 조기 종료
+                print("Learning End. Best_ACC:{:6f}".format(best_acc.item()/len(test_loader)*100))
+                # break
 
-def imshow(img):
-    img = img / 2 + 0.5     # unnormalize
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
+        else: # loss가 개선된 경우
+            best_acc = accuracy
+            best_model = copy.deepcopy(model)
+            patience_check = 0
 
-
-# 학습용 이미지를 무작위로 가져오기
-dataiter = iter(test_loader)
-images, labels = next(dataiter)
-
-# 이미지 보여주기
-imshow(torchvision.utils.make_grid(images[3]))
-    
-
-images[1].shape
-
-x = images[1].view(-1, img_size).squeeze()
-label = onehot(labels[3])
-x_reconst, mu_de, logvar_de, mu, logvar = model(x, label)
-imshow(x_reconst.reshape([3, 32, 32]).detach())

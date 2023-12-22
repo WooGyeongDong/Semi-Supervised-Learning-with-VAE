@@ -17,8 +17,8 @@ class Encoder(nn.Module):
         self.fc1 = nn.Sequential(
             nn.Linear(x_dim, h_dim),
             nn.Tanh(),
-            nn.Linear(h_dim, h_dim),
-            nn.Tanh() 
+            # nn.Linear(h_dim, h_dim),
+            # nn.Tanh() 
         )
 
         # output layer
@@ -233,3 +233,46 @@ class VAE123(nn.Module):
             nn.init.normal_(module.weight, mean = 0.0, std = 0.001)
             nn.init.constant_(module.bias, 0)
 
+
+class Decoder_norm(nn.Module):
+    def __init__(self, x_dim, h_dim, z_dim):
+        super().__init__()
+
+        # 1st hidden layer
+        self.fc1 = nn.Sequential(
+            nn.Linear(z_dim, h_dim),
+            nn.Softplus(),
+            # nn.Linear(h_dim, h_dim),
+            # nn.Softplus()
+        )
+
+        # output layer
+        self.mu = nn.Linear(h_dim, x_dim)
+        self.logvar = nn.Linear(h_dim, x_dim)
+
+    def forward(self, z):
+        z = self.fc1(z)
+        
+        mu_de = torch.sigmoid(self.mu(z))
+        logvar_de = self.logvar(z)
+        
+        x_reconst = reparameterization(mu_de, logvar_de)
+        return x_reconst, mu_de, logvar_de
+    
+class VAE_norm(nn.Module):
+    def __init__(self, x_dim, h_dim, z_dim):
+        super().__init__()
+        self.encoder = Encoder(x_dim, h_dim, z_dim)
+        self.decoder = Decoder_norm(x_dim, h_dim, z_dim)
+        
+    def forward(self, x):
+        z, mu, logvar = self.encoder(x)
+        x_reconst, mu_de, logvar_de = self.decoder(z)
+        return x_reconst, mu_de, logvar_de, mu, logvar
+    
+def loss_norm(x, mu_de, logvar_de , mu, logvar):
+    kl_div = 0.5 * torch.sum(mu**2 + logvar.exp() - logvar - 1)
+    reconst_loss = 0.5*torch.sum(((x-mu_de)**2)/torch.exp(logvar_de)+logvar_de)
+    loss = kl_div + reconst_loss
+    
+    return loss

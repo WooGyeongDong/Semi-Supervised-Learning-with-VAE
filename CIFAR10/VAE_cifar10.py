@@ -16,7 +16,7 @@ config = {'input_dim' : 3*32*32,
           'latent_dim' : 50,
           'batch_size' : 500,
           'labelled_size' : 50000,
-          'epochs' : 200,
+          'epochs' : 1000,
           'lr' : 0.0003,
           'best_loss' : 10**9,
           'patience_limit' : 3}
@@ -72,37 +72,38 @@ for epoch in tqdm(range(config['epochs'])):
     
     print('Epoch: {} Train_Loss: {} :'.format(epoch, train_loss/len(train_dataloader.dataset)))    
     
-    
+model_scripted = torch.jit.script(model.cpu()) # TorchScript 형식으로 내보내기
+model_scripted.save('vcifar10.pt')
 #%%
     
-import torchvision.utils
-import matplotlib.pyplot as plt
-import numpy as np
+# import torchvision.utils
+# import matplotlib.pyplot as plt
+# import numpy as np
 
-model = torch.jit.load('vcifar10.pt')
+# model = torch.jit.load('vcifar10.pt')
 
-def imshow(img):
-    img = img / 2 + 0.5     # unnormalize
-    npimg = img.numpy()
-    plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.show()
+# def imshow(img):
+#     img = img / 2 + 0.5     # unnormalize
+#     npimg = img.numpy()
+#     plt.imshow(np.transpose(npimg, (1, 2, 0)))
+#     plt.show()
 
 
-# 학습용 이미지를 무작위로 가져오기
-dataiter = iter(train_dataloader)
-images, labels = next(dataiter)
+# # 학습용 이미지를 무작위로 가져오기
+# dataiter = iter(train_dataloader)
+# images, labels = next(dataiter)
 
-# 이미지 보여주기
-imshow(torchvision.utils.make_grid(images[10]))
+# # 이미지 보여주기
+# imshow(torchvision.utils.make_grid(images[10]))
     
 
-images[1].shape
+# images[1].shape
 
-x = images[10].view(-1, img_size).squeeze()
+# x = images[10].view(-1, img_size).squeeze()
 
-x_reconst, mu_de, logvar_de, mu, logvar = model(x)
-imshow(x_reconst.reshape([3, 32, 32]).detach())
+# x_reconst, mu_de, logvar_de, mu, logvar = model(x)
+# imshow(x_reconst.reshape([3, 32, 32]).detach())
 
-#%%
-model.encoder(x)
+# #%%
+# model.encoder(x)
 
